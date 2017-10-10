@@ -6,7 +6,7 @@ import os
 import sys
 
 def replaceString(obj, origString, newString):
-    content = json.dumps(obj, indent=4)
+    content = json.dumps(obj)
     content = content.replace(origString, newString)
     return json.loads(content)
 
@@ -51,19 +51,30 @@ def compile_template_reference(basePath, resource, next_namespace):
     if "variables" in compiledReferencedTemplate:
         vNames = compiledReferencedTemplate["variables"].keys()
         for vName in vNames:
-            variables[str(cur_namespace) + "-" + vName] = copy.deepcopy(compiledReferencedTemplate["variables"][vName]["value"])
+            variables[str(cur_namespace) + "-" + vName] = copy.deepcopy(compiledReferencedTemplate["variables"][vName])
             # Update references in template with new name and reload config
+            variables = replaceString(variables, "variables('{}')".format(vName), "variables('{}-{}')".format(cur_namespace, vName))
             compiledReferencedTemplate = replaceString(compiledReferencedTemplate, "variables('{}')".format(vName), "variables('{}-{}')".format(cur_namespace, vName))
 
     # Add resources from referenced template
-    for resource in compiledReferencedTemplate["resources"]:
-        resourceCopy = copy.deepcopy(resource)
-        if resource["name"].startswith("["):
-            name = "[concat('{}-', {})]".format(cur_namespace, resource["name"][1:-1])
-        else:
-            name = "{}-{}".format(cur_namespace, resource["name"])
-        resourceCopy["name"] = name
-        resources.append(resourceCopy)
+    if "resources" in compiledReferencedTemplate:
+        rCount = len(compiledReferencedTemplate["resources"])
+        for rI in range(0, rCount):
+            resource = compiledReferencedTemplate["resources"][rI]
+            resourceCopy = copy.deepcopy(resource)
+            if resource["name"].startswith("["):
+                replaceName = resource["name"][1:-1]
+                name = "[concat('{}-', {})]".format(cur_namespace, resource["name"][1:-1])
+            else:
+                replaceName = resource["name"]
+                name = "{}-{}".format(cur_namespace, resource["name"])
+
+            print("{} => {}".format(replaceName, name[1:-1]), file=sys.stderr)
+            compiledReferencedTemplate = replaceString(compiledReferencedTemplate, replaceName, name[1:-1])
+            resources = replaceString(resources, replaceName, name[1:-1])
+            resourceCopy = replaceString(resourceCopy, replaceName, name[1:-1])
+            resourceCopy["name"] = name
+            resources.append(resourceCopy)
 
     return variables, resources, outputs, next_namespace
 
